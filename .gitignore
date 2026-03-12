@@ -1,0 +1,22 @@
+# Node / Next.js
+node_modules/
+.next/
+out/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+
+# Local environment files
+.env
+.env.local
+
+# Logs and system files
+.DS_Store
+*.log
+
+# Tooling caches
+.pnpm-store/
+.pytest_cache/
+.mypy_cache/
