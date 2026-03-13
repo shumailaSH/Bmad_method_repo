@@ -12,6 +12,7 @@ interface RecommendationResponse {
   style_preference: string;
   outfit_items: OutfitItem[];
   summary: string;
+  outfit_image_url?: string;
 }
 
 interface RecommendationResultsProps {
@@ -109,6 +110,23 @@ export function RecommendationResults({ occasion, weatherContext, stylePreferenc
               Curated just for your {occasion.toLowerCase()} in {weatherContext}
             </p>
           </section>
+
+          {/* Outfit Image */}
+          {recommendation.outfit_image_url && (
+            <section className="flex justify-center">
+              <div className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
+                <p className="text-xs uppercase tracking-[0.3em] text-zinc-400 mb-2 text-center">
+                  Visual Preview
+                </p>
+                <img 
+                  src={recommendation.outfit_image_url} 
+                  alt="Generated outfit visualization"
+                  className="w-full max-w-md rounded-2xl shadow-lg"
+                  style={{ maxWidth: '512px', height: 'auto' }}
+                />
+              </div>
+            </section>
+          )}
 
           {/* Recommendation Results */}
           <section

@@ -2,6 +2,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Optional
 import os
+import requests
+import base64
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_mistralai import ChatMistralAI
 
@@ -23,6 +25,7 @@ class RecommendationResponse(BaseModel):
     style_preference: str
     outfit_items: List[OutfitItem]
     summary: str
+    outfit_image_url: Optional[str] = None
 
 @router.post("/recommendations", response_model=RecommendationResponse)
 async def generate_recommendation(request: RecommendationRequest):
@@ -300,16 +303,95 @@ Make sure the outfit is practical, stylish, and appropriate for the given contex
         
         print(f"Generated {len(outfit_items)} items from Mistral API")
         
+        # Generate outfit image using Hugging Face API
+        outfit_image_url = await generate_outfit_image(occasion, weather_context, style, outfit_items)
+        
         return RecommendationResponse(
             occasion=occasion,
             weather_context=weather_context,
             style_preference=style,
             outfit_items=outfit_items,
-            summary=result["summary"]
+            summary=result["summary"],
+            outfit_image_url=outfit_image_url
         )
         
     except Exception as e:
         print(f"Error calling Mistral API via LangChain: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+async def generate_outfit_image(occasion: str, weather_context: str, style: str, outfit_items: List[OutfitItem]) -> Optional[str]:
+    """Generate outfit image using Hugging Face API"""
+    
+    print(f"Generating outfit image for: occasion={occasion}, weather={weather_context}, style={style}")
+    
+    # Get Hugging Face API token from environment variable
+    hf_api_token = os.getenv("HUGGINGFACE_API_TOKEN")
+    
+    if not hf_api_token:
+        print("No Hugging Face API token found, skipping image generation")
+        return None
+    
+    try:
+        # Create detailed prompt for outfit image generation
+        item_descriptions = []
+        for item in outfit_items:
+            item_descriptions.append(f"{item.category}: {item.item}")
+        
+        prompt = f"""
+Full body fashion model wearing:
+{', '.join(item_descriptions)}.
+
+{style} fashion style.
+Occasion: {occasion}.
+Weather: {weather_context}.
+
+Editorial fashion photography, studio lighting,
+highly detailed, modern clothing catalog photo.
+"""
+        
+        print(f"Image generation prompt: {prompt}")
+        
+        # Hugging Face API endpoint for Stable Diffusion XL (better quality)
+        api_url = "https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-xl-base-1.0"
+        
+        headers = {
+            "Authorization": f"Bearer {hf_api_token}"
+        }
+        
+        payload = {
+            "inputs": prompt,
+            "parameters": {
+                "width": 512,
+                "height": 512,
+                "num_inference_steps": 20,
+                "guidance_scale": 7.5
+            }
+        }
+        
+        print("Calling Hugging Face API...")
+        response = requests.post(api_url, headers=headers, json=payload, timeout=60)
+        
+        if response.status_code == 503:
+            print("Model loading, retrying in 5 seconds...")
+            import time
+            time.sleep(5)
+            response = requests.post(api_url, headers=headers, json=payload, timeout=60)
+        
+        if response.status_code == 200:
+            # Convert image to base64 for embedding in response
+            image_data = base64.b64encode(response.content).decode('utf-8')
+            image_url = f"data:image/png;base64,{image_data}"
+            print(f"Successfully generated outfit image")
+            return image_url
+        else:
+            print(f"Hugging Face API error: {response.status_code} - {response.text}")
+            return None
+            
+    except Exception as e:
+        print(f"Error generating outfit image: {e}")
         import traceback
         traceback.print_exc()
         return None
