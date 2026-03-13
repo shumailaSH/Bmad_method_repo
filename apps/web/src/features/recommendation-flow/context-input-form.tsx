@@ -22,6 +22,20 @@ type ValidationError = {
   message: string;
 };
 
+type OutfitItem = {
+  category: string;
+  item: string;
+  reason: string;
+};
+
+type RecommendationResponse = {
+  occasion: string;
+  weather_context: string;
+  style_preference: string;
+  outfit_items: OutfitItem[];
+  summary: string;
+};
+
 const INITIAL_FORM_STATE: FormState = {
   occasion: OCCASION_OPTIONS[0],
   weatherContext: "",
@@ -90,7 +104,9 @@ function validateForm(formState: FormState): ValidationError[] {
 export function ContextInputForm() {
   const [formState, setFormState] = useState<FormState>(getInitialFormState);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
-  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [recommendation, setRecommendation] = useState<RecommendationResponse | null>(null);
+  const [requestError, setRequestError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(formState));
@@ -114,38 +130,46 @@ export function ContextInputForm() {
   async function handleSubmit() {
     const errors = validateForm(formState);
     setValidationErrors(errors);
-    setIsSubmitted(true);
 
     if (errors.length === 0) {
       try {
+        setIsLoading(true);
+        setRequestError(null);
         // Form is valid - call the API to generate recommendation
-        const response = await fetch("/api/v1/recommendations", {
+        const response = await fetch("http://localhost:8000/api/v1/recommendations", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(formState),
+          body: JSON.stringify({
+            occasion: formState.occasion,
+            weather_context: formState.weatherContext,
+            style_preference: formState.stylePreference
+          }),
         });
 
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
 
-        const recommendation = await response.json();
-        console.log("Recommendation generated:", recommendation);
+        const recommendationData = await response.json() as RecommendationResponse;
+        console.log("Recommendation generated:", recommendationData);
         
-        // For now, just log the recommendation
-        // In a future story, this would navigate to a results page
-        alert(`Recommendation generated for ${recommendation.occasion}!\n\nSummary: ${recommendation.summary}`);
+        // Navigate to the results page with the context as query parameters
+        const url = new URL("/recommendations", window.location.origin);
+        url.searchParams.set("occasion", formState.occasion);
+        url.searchParams.set("weatherContext", formState.weatherContext);
+        url.searchParams.set("stylePreference", formState.stylePreference);
+        window.location.href = url.toString();
       } catch (error) {
         console.error("Error generating recommendation:", error);
-        alert("Failed to generate recommendation. Please try again.");
+        setRecommendation(null);
+        setRequestError("Failed to generate recommendation. Please try again.");
+      } finally {
+        setIsLoading(false);
       }
     }
   }
-
-  // Check if form has validation errors for button state
-  const hasValidationErrors = validationErrors.length > 0;
 
   return (
     <form
@@ -307,22 +331,41 @@ export function ContextInputForm() {
         type="button"
         onClick={handleSubmit}
         aria-describedby="recommendation-next-step"
+        disabled={isLoading}
         className={`inline-flex w-full items-center justify-center rounded-full px-5 py-3 text-sm font-semibold transition sm:w-fit ${
-          validationErrors.length === 0
+          isLoading
+            ? "cursor-wait bg-zinc-700 text-zinc-300"
+            : validationErrors.length === 0
             ? "bg-zinc-100 text-zinc-950 hover:bg-zinc-200"
             : "bg-zinc-100/60 text-zinc-950/80"
         }`}
       >
-        {validationErrors.length === 0 ? "Generate Recommendation" : "Fix Issues to Continue"}
+        {isLoading
+          ? "Generating Looks..."
+          : validationErrors.length === 0
+          ? "Generate Recommendation"
+          : "Fix Issues to Continue"}
       </button>
       <p
         id="recommendation-next-step"
         className="text-sm text-zinc-400"
       >
-        {validationErrors.length === 0
+        {isLoading
+          ? "Building an outfit recommendation for your current context"
+          : validationErrors.length === 0
           ? "Click above to generate your outfit recommendation"
           : "Complete all required fields to continue"}
       </p>
+
+      {requestError && (
+        <div
+          className="rounded-2xl border border-red-900/50 bg-red-950/30 p-4"
+          role="alert"
+          aria-live="polite"
+        >
+          <p className="text-sm font-medium text-red-100">{requestError}</p>
+        </div>
+      )}
     </form>
   );
 }

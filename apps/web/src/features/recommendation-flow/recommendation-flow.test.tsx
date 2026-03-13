@@ -1,11 +1,37 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { RecommendationFlow } from "./recommendation-flow";
+
+const mockRecommendation = {
+  occasion: "Class or campus day",
+  weather_context: "morning",
+  style_preference: "Relaxed",
+  outfit_items: [
+    {
+      category: "Top",
+      item: "Cotton crew neck t-shirt",
+      reason: "Comfortable base layer suitable for most occasions",
+    },
+    {
+      category: "Bottom",
+      item: "Dark wash jeans",
+      reason: "Versatile and appropriate for campus environment",
+    },
+    {
+      category: "Shoes",
+      item: "White sneakers",
+      reason: "Comfortable for walking around campus",
+    },
+  ],
+  summary:
+    "Your relaxed outfit for class or campus day in morning includes: Cotton crew neck t-shirt, Dark wash jeans, White sneakers. This combination balances comfort, style, and practicality for your specific needs.",
+};
 
 describe("RecommendationFlow", () => {
   beforeEach(() => {
     window.sessionStorage.clear();
+    global.fetch = vi.fn();
   });
 
   it("renders the required context fields without account gating", () => {
@@ -267,5 +293,60 @@ describe("ContextInputForm Validation", () => {
     
     // Check that session storage was updated
     expect(sessionStorage.getItem("recommendation-flow-context")).toContain("Test weather");
+  });
+
+  it("renders clothing recommendations in the page after a successful response", async () => {
+    vi.mocked(global.fetch).mockResolvedValue({
+      ok: true,
+      json: async () => mockRecommendation,
+    } as Response);
+
+    render(<RecommendationFlow />);
+
+    fireEvent.change(screen.getByLabelText(/weather context/i), {
+      target: { value: "Morning breeze on campus" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: /generate recommendation/i }),
+    );
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://localhost:8000/api/v1/recommendations",
+      expect.objectContaining({ method: "POST" }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", {
+          name: /clothing recommendations for class or campus day/i,
+        }),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/cotton crew neck t-shirt/i)).toBeInTheDocument();
+      expect(screen.getByText(/dark wash jeans/i)).toBeInTheDocument();
+      expect(screen.getByText(/white sneakers/i)).toBeInTheDocument();
+      expect(screen.getByText(/why this works/i)).toBeInTheDocument();
+    });
+  });
+
+  it("shows an inline request error when the recommendation call fails", async () => {
+    vi.mocked(global.fetch).mockResolvedValue({
+      ok: false,
+      status: 500,
+    } as Response);
+
+    render(<RecommendationFlow />);
+
+    fireEvent.change(screen.getByLabelText(/weather context/i), {
+      target: { value: "Warm afternoon" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: /generate recommendation/i }),
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/failed to generate recommendation\. please try again\./i),
+      ).toBeInTheDocument();
+    });
   });
 });
